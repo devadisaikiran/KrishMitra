@@ -5,17 +5,16 @@ import pandas as pd
 import numpy as np
 import os
 import requests
-from dotenv import load_dotenv
 import google.generativeai as genai
-from model_definitions import RFXGEnsemble
+from model import RFXGEnsemble   # ← ONLY THIS
 
 # Load environment variables from .env file
-load_dotenv()
+#load_dotenv()
 
 # --- Configuration ---
 WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-BASE_URL = "http://api.weatherapi.com/v1"
+BASE_URL = "https://api.weatherapi.com/v1"
 
 CROP_LABELS = [
     'apple', 'banana', 'blackgram', 'chickpea', 'coconut', 'coffee', 'cotton',
@@ -32,6 +31,9 @@ CORS(app)
 # --- Configure Gemini API ---
 if not GEMINI_API_KEY:
     raise ValueError("GEMINI_API_KEY not found. Please set it in your .env file.")
+if not WEATHER_API_KEY:
+    raise ValueError("WEATHER_API_KEY not found.")
+
 genai.configure(api_key=GEMINI_API_KEY)
 gemini_model = genai.GenerativeModel('models/gemini-2.0-flash')
 
@@ -40,8 +42,7 @@ try:
     model = joblib.load("crop_model.pkl")
     df = pd.read_excel("Model_Data.xlsx")
 except FileNotFoundError as e:
-    print(f"Error loading data file or model: {e}")
-    exit()
+    raise RuntimeError(f"Startup failed: {e}")
 
 # --- Translation Data ---
 TRANSLATIONS = {
@@ -303,8 +304,11 @@ def predict():
             )
 
     # --- Predict probabilities ---
-    probabilities_stacked = model.predict_proba(user_data)  # list of arrays
-    probabilities = np.array(probabilities_stacked).T  # shape: (n_samples, n_labels)
+    probabilities = model.predict_proba(user_data)
+    if probabilities.ndim == 2:
+        probabilities = probabilities
+    else:
+        probabilities = np.array(probabilities).T
 
     # --- Crop labels from y_train ---
     crop_labels = CROP_LABELS  # ensure this matches training labels
@@ -385,6 +389,5 @@ def predict():
     # If JSON request, return JSON response
     return redirect(url_for('crop_prediction_page'))
 
-
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=5000)
